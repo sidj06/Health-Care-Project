@@ -1,0 +1,13 @@
+{
+	"name": "Delta_Table",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "Delta_Lake",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureDatabricksDeltaLakeDataset",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

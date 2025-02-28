@@ -1,0 +1,522 @@
+{
+	"name": "EMR Copy Data",
+	"properties": {
+		"activities": [
+			{
+				"name": "Lookup for Configuration Data",
+				"description": "Lookup for Configuration Data",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "DelimitedTextSource",
+						"storeSettings": {
+							"type": "AzureBlobFSReadSettings",
+							"recursive": true,
+							"enablePartitionDiscovery": false
+						},
+						"formatSettings": {
+							"type": "DelimitedTextReadSettings"
+						}
+					},
+					"dataset": {
+						"referenceName": "ADLS_CSV",
+						"type": "DatasetReference",
+						"parameters": {
+							"Container": "config",
+							"FilePath": "emr",
+							"FileName": "load_config.csv"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Looping over Config Data",
+				"description": "Looping over Config Data",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Lookup for Configuration Data",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Lookup for Configuration Data').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "Checking for file for archive",
+							"description": "Checking for file for archive",
+							"type": "GetMetadata",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"dataset": {
+									"referenceName": "ADLS_Parquet",
+									"type": "DatasetReference",
+									"parameters": {
+										"Container": "bronze",
+										"FilePath": {
+											"value": "@item().targetpath",
+											"type": "Expression"
+										},
+										"FileName": {
+											"value": "@split(item().tablename,'.')[1]",
+											"type": "Expression"
+										}
+									}
+								},
+								"fieldList": [
+									"exists"
+								],
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "ParquetReadSettings"
+								}
+							}
+						},
+						{
+							"name": "Archiving the exisitng file",
+							"description": "Archiving the exisitng file",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "Checking for file for archive",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@activity('Checking for file for archive').output.exists",
+									"type": "Expression"
+								},
+								"ifTrueActivities": [
+									{
+										"name": "Arching the exisiting file",
+										"description": "Arching the exisiting file",
+										"type": "Copy",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "ParquetSource",
+												"storeSettings": {
+													"type": "AzureBlobFSReadSettings",
+													"recursive": true,
+													"enablePartitionDiscovery": false
+												},
+												"formatSettings": {
+													"type": "ParquetReadSettings"
+												}
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "ADLS_Parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"Container": "bronze",
+													"FilePath": {
+														"value": "@item().targetpath",
+														"type": "Expression"
+													},
+													"FileName": {
+														"value": "@split(item().tablename,'.')[1]",
+														"type": "Expression"
+													}
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "ADLS_Parquet",
+												"type": "DatasetReference",
+												"parameters": {
+													"Container": "bronze",
+													"FilePath": {
+														"value": "@concat(item().targetpath,'/','Archive','/',formatDateTime(utcNow(),'yyyy'),'/',\nformatDateTime(utcNow(),'MM'),'/',formatDateTime(utcNow(),'dd'))",
+														"type": "Expression"
+													},
+													"FileName": "@split(item().tablename,'.')[1]"
+												}
+											}
+										]
+									}
+								]
+							}
+						},
+						{
+							"name": "Switching over Full-Increment Load",
+							"description": "Switching over Full/Increment Load",
+							"type": "Switch",
+							"dependsOn": [
+								{
+									"activity": "Archiving the exisitng file",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"on": {
+									"value": "@item().loadtype",
+									"type": "Expression"
+								},
+								"cases": [
+									{
+										"value": "Full",
+										"activities": [
+											{
+												"name": "Full Load",
+												"description": "Full Load",
+												"type": "Copy",
+												"dependsOn": [],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [
+													{
+														"name": "Source",
+														"value": "@{split(item().tablename,'.')[0]}.@{split(item().tablename,'.')[1]}"
+													},
+													{
+														"name": "Destination",
+														"value": "@{'bronze'}/@{'item().targetpath'}/@{split(item().tablename,'.')[1]}"
+													}
+												],
+												"typeProperties": {
+													"source": {
+														"type": "AzureSqlSource",
+														"sqlReaderQuery": {
+															"value": "@concat('select *,''',item().datasource,''' as datasource from ',item().tablename)",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"sink": {
+														"type": "ParquetSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "ParquetWriteSettings"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "SQL_DB",
+														"type": "DatasetReference",
+														"parameters": {
+															"Schema": {
+																"value": "@split(item().tablename,'.')[0]",
+																"type": "Expression"
+															},
+															"TableName": {
+																"value": "@split(item().tablename,'.')[1]",
+																"type": "Expression"
+															},
+															"DatabaseName": {
+																"value": "@item().database",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "ADLS_Parquet",
+														"type": "DatasetReference",
+														"parameters": {
+															"Container": "bronze",
+															"FilePath": {
+																"value": "@item().targetpath",
+																"type": "Expression"
+															},
+															"FileName": {
+																"value": "@split(item().tablename,'.')[1]",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "Insert Logs for Full Load",
+												"description": "Insert Logs for Full Load",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "Full Load",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "AzureDatabricksDeltaLakeSource",
+														"query": {
+															"value": "@concat('insert into HealthCareProject.audit.load_logs(data_source,tablename,numberofrowscopied,watermarkcolumnname,loaddate) values (''',item().datasource,''', ''',item().tablename,''',''',activity('Full Load').output.rowscopied,''',''',item().watermark,''',''',utcNow(),''')')",
+															"type": "Expression"
+														}
+													},
+													"dataset": {
+														"referenceName": "Delta_Table",
+														"type": "DatasetReference"
+													}
+												}
+											}
+										]
+									},
+									{
+										"value": "Incremental",
+										"activities": [
+											{
+												"name": "Checking for Last Modified Late",
+												"description": "Checking for Last Modified Late",
+												"type": "Lookup",
+												"dependsOn": [],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "AzureDatabricksDeltaLakeSource",
+														"query": {
+															"value": "@concat('select coalesce(cast(max(loaddate) as date),''','1900-01-01',''') as last_fetched_date from audit.load_logs where',' data_source=''',item().datasource,''' and tablename=''',item().tablename,'''')",
+															"type": "Expression"
+														}
+													},
+													"dataset": {
+														"referenceName": "Delta_Table",
+														"type": "DatasetReference"
+													}
+												}
+											},
+											{
+												"name": "Incremental Load",
+												"description": "Incremental Load",
+												"type": "Copy",
+												"dependsOn": [
+													{
+														"activity": "Checking for Last Modified Late",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [
+													{
+														"name": "Source",
+														"value": "@{split(item().tablename,'.')[0]}.@{split(item().tablename,'.')[1]}"
+													},
+													{
+														"name": "Destination",
+														"value": "@{'bronze'}/@{'item().targetpath'}/@{split(item().tablename,'.')[1]}"
+													}
+												],
+												"typeProperties": {
+													"source": {
+														"type": "AzureSqlSource",
+														"sqlReaderQuery": {
+															"value": "@concat('select *,''',item().datasource,''' as datasource from ',item().tablename,' where ',item().watermark,' >= ''',activity('Checking for Last Modified Late').output.firstRow.last_fetched_date,'''')",
+															"type": "Expression"
+														},
+														"queryTimeout": "02:00:00",
+														"partitionOption": "None"
+													},
+													"sink": {
+														"type": "ParquetSink",
+														"storeSettings": {
+															"type": "AzureBlobFSWriteSettings"
+														},
+														"formatSettings": {
+															"type": "ParquetWriteSettings"
+														}
+													},
+													"enableStaging": false,
+													"translator": {
+														"type": "TabularTranslator",
+														"typeConversion": true,
+														"typeConversionSettings": {
+															"allowDataTruncation": true,
+															"treatBooleanAsNumber": false
+														}
+													}
+												},
+												"inputs": [
+													{
+														"referenceName": "SQL_DB",
+														"type": "DatasetReference",
+														"parameters": {
+															"Schema": {
+																"value": "@split(item().tablename,'.')[0]",
+																"type": "Expression"
+															},
+															"TableName": {
+																"value": "@split(item().tablename,'.')[1]",
+																"type": "Expression"
+															},
+															"DatabaseName": {
+																"value": "@item().database",
+																"type": "Expression"
+															}
+														}
+													}
+												],
+												"outputs": [
+													{
+														"referenceName": "ADLS_Parquet",
+														"type": "DatasetReference",
+														"parameters": {
+															"Container": "bronze",
+															"FilePath": {
+																"value": "@item().targetpath",
+																"type": "Expression"
+															},
+															"FileName": {
+																"value": "@split(item().tablename,'.')[1]",
+																"type": "Expression"
+															}
+														}
+													}
+												]
+											},
+											{
+												"name": "Insert Logs for Incremental Load",
+												"description": "Insert Logs for Incremental Load",
+												"type": "Lookup",
+												"dependsOn": [
+													{
+														"activity": "Incremental Load",
+														"dependencyConditions": [
+															"Succeeded"
+														]
+													}
+												],
+												"policy": {
+													"timeout": "0.12:00:00",
+													"retry": 0,
+													"retryIntervalInSeconds": 30,
+													"secureOutput": false,
+													"secureInput": false
+												},
+												"userProperties": [],
+												"typeProperties": {
+													"source": {
+														"type": "AzureDatabricksDeltaLakeSource",
+														"query": {
+															"value": "@concat('insert into audit.load_logs(data_source,tablename,numberofrowscopied,watermarkcolumnname,loaddate) values (''',item().datasource,''', ''',item().tablename,''',''',activity('Incremental Load').output.rowscopied,''',''',item().watermark,''',''',utcNow(),''')')",
+															"type": "Expression"
+														}
+													},
+													"dataset": {
+														"referenceName": "Delta_Table",
+														"type": "DatasetReference"
+													}
+												}
+											}
+										]
+									}
+								]
+							}
+						}
+					]
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2025-02-28T07:59:35Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

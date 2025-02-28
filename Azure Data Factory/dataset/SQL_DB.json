@@ -1,0 +1,41 @@
+{
+	"name": "SQL_DB",
+	"properties": {
+		"description": "SQL_DB_Hos",
+		"linkedServiceName": {
+			"referenceName": "SQL_Hospital_B",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"DatabaseName": {
+					"value": "@dataset().DatabaseName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"Schema": {
+				"type": "string"
+			},
+			"TableName": {
+				"type": "string"
+			},
+			"DatabaseName": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": {
+				"value": "@dataset().Schema",
+				"type": "Expression"
+			},
+			"table": {
+				"value": "@dataset().TableName",
+				"type": "Expression"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

@@ -1,0 +1,12 @@
+{
+	"name": "GEN_ADLS",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"description": "GEN_ADLS",
+		"annotations": [],
+		"type": "AzureBlobFS",
+		"typeProperties": {
+			"url": "https://adlshealthcaredev.dfs.core.windows.net/"
+		}
+	}
+}

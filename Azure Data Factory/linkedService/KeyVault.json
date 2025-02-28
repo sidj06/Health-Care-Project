@@ -1,0 +1,12 @@
+{
+	"name": "KeyVault",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"description": "KeyVault",
+		"annotations": [],
+		"type": "AzureKeyVault",
+		"typeProperties": {
+			"baseUrl": "https://Kv-Dev-HealtCareProject.vault.azure.net/"
+		}
+	}
+}
